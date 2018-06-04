@@ -1,0 +1,16 @@
+{
+  "levels": [
+    {
+      "level": 0,
+      "trackPath": "Tracks/Level_00001/",
+      "randomTrack" : true,
+      "tracks": [
+        "Track001",
+        "Track002",
+        "Track003",
+        "Track004"
+      ],
+      "targetScore": 1000
+    }
+  ]
+}
