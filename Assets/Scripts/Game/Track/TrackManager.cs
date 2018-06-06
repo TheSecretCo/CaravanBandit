@@ -5,14 +5,20 @@ using UnityEngine;
 [PrefabAttribute("Singleton/TrackManager")]
 public class TrackManager : Singleton<TrackManager>
 {
-    public bool isTrackReady = false; 
+    [SerializeField]
+    public bool withVehicles;
+    [HideInInspector]
+    public bool isTrackReady = false;
     [SerializeField]
     int totalTrackLength;
 
-    LevelConfig levelConfig;
+    public LevelConfig levelConfig { get; private set; }
 
     List<ObjectPool> trackPoolList = new List<ObjectPool>();
     public List<TrackSegment> presentedTrackSegment = new List<TrackSegment>();
+
+    List<ObjectPool> vehiclePoolList = new List<ObjectPool>();
+    public List<VehicleControlScript> vehicleControlScripts = new List<VehicleControlScript>();
 
     int currentTrackIndex = 0;
     int lastTrackIndex = 0;
@@ -24,37 +30,50 @@ public class TrackManager : Singleton<TrackManager>
 
     public float k_FloatingOriginThreshold = 10000f;
 
-    private void OnEnable ()
+    bool firstVehicleCreated = false;
+
+    public CharacterControlScript characterControlScript;
+
+    private void OnEnable()
     {
         TimeManager.Instance.onUpdate += Instance_OnUpdate;
     }
 
-    private void OnDisable ()
+    private void OnDisable()
     {
         isTrackReady = false;
-        TimeManager.Instance.onUpdate -= Instance_OnUpdate;
+        if (TimeManager.Instance != null)
+        {
+            TimeManager.Instance.onUpdate -= Instance_OnUpdate;
+        }
     }
 
-    public void Init ()
+    public void Init()
     {
     }
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         //trackPool = new ObjectPool();
         InitTracksForLevel(0);
         LoadTrack(currentTrackIndex, currentTrackIndex + trackCountPerFrame);
+        GenerateVehicle();
+    }
+
+    public void RegisterCharacter (CharacterControlScript _characterControlScript)
+    {
+        characterControlScript = _characterControlScript;
     }
 
     // Update is called once per frame
-    void Instance_OnUpdate (float obj)
+    void Instance_OnUpdate(float obj)
     {
 
 
     }
 
-    public void InitTracksForLevel (int _level)
+    public void InitTracksForLevel(int _level)
     {
         levelConfig = LevelManager.Instance.GetLevel(_level);
 
@@ -73,7 +92,7 @@ public class TrackManager : Singleton<TrackManager>
         }
     }
 
-    public void LoadTrack (int _currentIndex, int _endIndex)
+    public void LoadTrack(int _currentIndex, int _endIndex)
     {
         currentTrackIndex = _endIndex;
 
@@ -116,12 +135,12 @@ public class TrackManager : Singleton<TrackManager>
         isTrackReady = true;
     }
 
-    public TrackSegment FindCurrentSegmentAt (Vector3 _posision)
+    public TrackSegment FindCurrentSegmentAt(Vector3 _posision)
     {
         for (int i = 0; i < presentedTrackSegment.Count; i++)
         {
             TrackSegment trackSegment = presentedTrackSegment[i];
-            if (trackSegment.startPoint.position.z < _posision.z && trackSegment.endPoint.position.z > _posision.z)
+            if (trackSegment.startPoint.position.z <= _posision.z && trackSegment.endPoint.position.z >= _posision.z)
             {
                 return trackSegment;
             }
@@ -130,7 +149,18 @@ public class TrackManager : Singleton<TrackManager>
         return null;
     }
 
-    public void RemoveTrackSegement (int _index)
+    public TrackSegment GetSegmentWithSegmentIndex (int _index)
+    {
+        TrackSegment segment = presentedTrackSegment.Find(item => item.segmentIndex.Equals(_index));
+        if (segment == null)
+        {
+            segment = presentedTrackSegment[0];
+        }
+
+        return segment;
+    }
+
+    public void RemoveTrackSegement(int _index)
     {
         TrackSegment trackSegementToRemove = null;
         for (int i = 0; i < presentedTrackSegment.Count; i++)
@@ -154,12 +184,18 @@ public class TrackManager : Singleton<TrackManager>
         LoadTrack(currentTrackIndex, currentTrackIndex + 1);
     }
 
-    public void ReCenterTracks (Vector3 _offset)
+    public void ReCenterTracks(Vector3 _offset)
     {
         int count = presentedTrackSegment.Count;
         for (int i = 0; i < count; i++)
         {
             presentedTrackSegment[i].transform.position -= _offset;
+        }
+
+        for (int i = 0; i < vehicleControlScripts.Count; i++)
+        {
+            VehicleControlScript vehicleControlScript = vehicleControlScripts[i];
+            vehicleControlScript.transform.position -= _offset;
         }
 
         //count = m_PastSegments.Count;
@@ -172,4 +208,59 @@ public class TrackManager : Singleton<TrackManager>
         //m_Segments[0].GetPointAtInWorldUnit(m_CurrentSegmentDistance, out currentPos, out currentRot);
     }
 
+    public void GenerateVehicle()
+    {
+        if (levelConfig == null)
+        {
+            return;
+        }
+
+        StartCoroutine(GenerateVehicleRoutine());
+    }
+
+    IEnumerator GenerateVehicleRoutine()
+    {
+        float nextVehicleAfter = 1.0f;
+        if (withVehicles)
+        {
+            int randomVehicleIndex = Random.Range(0, levelConfig.vehicles.Count);
+            string vehicleName = levelConfig.vehicles[randomVehicleIndex];
+
+            ObjectPool vehiclePool = vehiclePoolList.Find(item => vehicleName.Equals(item.name));
+            if (vehiclePool == null)
+            {
+                GameObject aGameObject = Resources.Load<GameObject>("Vehicles/" + vehicleName);
+                vehiclePool = new ObjectPool(aGameObject, 5);
+                vehiclePoolList.Add(vehiclePool);
+            }
+
+            GameObject vehicleGO = vehiclePool.Get();
+            //vehicleGO.transform.localScale = Vector3.one;
+            VehicleControlScript vehicleControlScript = vehicleGO.GetComponent<VehicleControlScript>();
+            vehicleControlScript.SetupVehicle(vehiclePool, !firstVehicleCreated);
+            vehicleControlScripts.Add(vehicleControlScript);
+            firstVehicleCreated = true;
+
+            nextVehicleAfter = Random.Range(levelConfig.timeBetweenVehicleMin, levelConfig.timeBetweenVehicleMax);
+            yield return new WaitForSeconds(nextVehicleAfter);
+            GenerateVehicle();
+        }
+    }
+
+    public void RemoveVehicleFromTrack (VehicleControlScript _vehicleControlScript)
+    {
+        vehicleControlScripts.Remove(_vehicleControlScript);
+    }
+
+    public void RemoveAllVehicles ()
+    {
+        for (int i = 0; i < vehicleControlScripts.Count; i++)
+        {
+            vehicleControlScripts[i].Free();
+        }
+
+        characterControlScript.RegisterVehicle(null);
+        vehicleControlScripts.Clear();
+        firstVehicleCreated = false;
+    }
 }

@@ -9,15 +9,20 @@ public class ControlDebugScript : MonoBehaviour {
     CharacterControlScript characterControlScript;
 
     [SerializeField]
+    Button runButton;
+    [SerializeField]
     Text runTypeText;
     [SerializeField]
     Text controlTypeText;
 
+    [SerializeField]
+    Text vehicleText;
 	// Use this for initialization
 	void Start () 
     {
         SetTypeText();
         SetControlText();
+        SetVehicleText();
 	}
 	
 	//// Update is called once per frame
@@ -44,6 +49,13 @@ public class ControlDebugScript : MonoBehaviour {
         SetControlText();
     }
 
+    public void OnVehicleButtonPressed ()
+    {
+        TrackManager.Instance.withVehicles = !TrackManager.Instance.withVehicles;
+        TrackManager.Instance.RemoveAllVehicles();
+        SetVehicleText();
+    }
+
 
     void SetTypeText ()
     {
@@ -60,5 +72,22 @@ public class ControlDebugScript : MonoBehaviour {
     void SetControlText ()
     {
         controlTypeText.text = characterControlScript.characterControlType.ToString();
+    }
+
+    void SetVehicleText ()
+    {
+        vehicleText.text = "With Vehicle";
+        if (!TrackManager.Instance.withVehicles)
+        {
+            runButton.interactable = true;
+            vehicleText.text = "Without Vehicle";
+        }
+        else
+        {
+            characterControlScript.autoForward = false;
+            SetTypeText();
+            runButton.interactable = false;
+            TrackManager.Instance.GenerateVehicle();
+        }
     }
 }

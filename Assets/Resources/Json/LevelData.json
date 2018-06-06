@@ -10,6 +10,13 @@
         "Track003",
         "Track004"
       ],
+      "vehicles": [
+        "Vehicle01"
+      ],
+      "vehicleSpeedMin": 10,
+      "vehicleSpeedMax": 20,
+      "timeBetweenVehicleMin": 3,
+      "timeBetweenVehicleMax": 5,
       "targetScore": 1000
     }
   ]

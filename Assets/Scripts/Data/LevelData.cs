@@ -15,5 +15,10 @@ public class LevelConfig
     public string trackPath { get; set; }
     public bool randomTrack { get; set; }
     public List<string> tracks { get; set; }
+    public List<string> vehicles { get; set; }
+    public float vehicleSpeedMin { get; set; }
+    public float vehicleSpeedMax { get; set; }
+    public float timeBetweenVehicleMin { get; set; }
+    public float timeBetweenVehicleMax { get; set; }
     public int targetScore { get; set; }
 }

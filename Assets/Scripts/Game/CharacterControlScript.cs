@@ -1,18 +1,21 @@
 ﻿using System.Collections;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 public enum ControlType
 {
     Swipe,
     Tap
 }
-public class CharacterControlScript : MonoBehaviour
+public class CharacterControlScript : MonoBehaviour, IGameObject
 {
     [SerializeField]
     public ControlType characterControlType;
 
     [SerializeField]
-    CharacterController characterController;
+    Transform characterTransform;
+    public CharacterColliderScript characterColliderScript { get; private set; }
+
     public float runDistance = 6.0F;
     public float laneChangeSpeed = 1.0f;
     //public float maxHeight = 2.0F;
@@ -35,26 +38,74 @@ public class CharacterControlScript : MonoBehaviour
     bool isSwiping;
 
     float jumpStart;
-    bool isJumping;
+    public bool isJumping { get; private set; }
+
+    public GameObjectType gameObjectType { get; set; }
+
+    public float speed { 
+        get
+        {
+            return runDistance;
+        } 
+        set
+        {
+            runDistance = speed;
+        }
+    }
+
     bool isGoingUp;
     //public float jumpSpeed = 20.0F;
-    public float jumpLength = 2.0f;     // Distance jumped
+    //public float jumpLength = 2.0f;     // Distance jumped
     public float jumpHeight = 1.2f;
+
+    VehicleControlScript currentVehicleControlScript;
 
     private void OnEnable()
     {
-        TimeManager.Instance.onUpdate += Instance_OnUpdate; ;
+        TimeManager.Instance.onUpdate += Instance_OnUpdate;
+        TimeManager.Instance.onLateUpdate += Instance_OnLateUpdate;
     }
 
-    private void onDisable()
+    private void OnDisable()
     {
-        TimeManager.Instance.onUpdate -= Instance_OnUpdate;
+        if (TimeManager.Instance != null)
+        {
+            TimeManager.Instance.onUpdate -= Instance_OnUpdate;
+            TimeManager.Instance.onLateUpdate -= Instance_OnLateUpdate;
+        }
     }
+
     // Use this for initialization
     void Start()
     {
-
+        gameObjectType = GameObjectType.Character;
+        GameObject characterObject = Instantiate<GameObject>(Resources.Load<GameObject>("Player/Player"), transform);
+        characterTransform = characterObject.transform;
+        characterTransform.localScale = Vector3.one;
+        characterTransform.localPosition= Vector3.zero;
+        characterColliderScript = characterObject.GetComponent<CharacterColliderScript>();
+        RegisterCharacterToTrack();
     }
+
+    void RegisterCharacterToTrack ()
+    {
+        TrackManager.Instance.RegisterCharacter(this);
+    }
+
+    public void RegisterVehicle (VehicleControlScript _newVehicleControlScript)
+    {
+        currentVehicleControlScript = _newVehicleControlScript;
+    }
+
+    void Instance_OnLateUpdate()
+    {
+        if (currentVehicleControlScript != null)
+        {
+            transform.position = new Vector3(transform.position.x, currentVehicleControlScript.transform.position.y, currentVehicleControlScript.transform.position.z);
+            forwardTargetPosition = transform.position;
+        }
+    }
+
 
     void Instance_OnUpdate(float _deltaTime)
     {
@@ -63,7 +114,7 @@ public class CharacterControlScript : MonoBehaviour
             return;
         }
         //Vector3 newMoveDirection = Vector3.zero;
-        //if (characterController.isGrounded)
+        //if (characterTransform.isGrounded)
         //{
         //    moveDirection = new Vector3(Input.GetAxis("Horizontal"), 0, Input.GetAxis("Vertical"));
         //    moveDirection = transform.TransformDirection(moveDirection);
@@ -74,23 +125,21 @@ public class CharacterControlScript : MonoBehaviour
         //    }
         //}
 
-        ////if (characterController.gameObject.transform.position.y >= maxHeight)
+        ////if (characterTransform.gameObject.transform.position.y >= maxHeight)
         ////{
         ////    moveDirection.y = maxHeight;
         ////}
         ////else
         ////{
-        ////Debug.LogError(characterController.isGrounded);
-        //if (!characterController.isGrounded)
+        ////Debug.LogError(characterTransform.isGrounded);
+        //if (!characterTransform.isGrounded)
         //{
         //    moveDirection.y -= gravity * _deltaTime;
         //    //}
         //    //Debug.LogError(moveDirection.y);
         //}
         //Debug.LogError(moveDirection.y);
-        //CollisionFlags cFlags = characterController.Move(moveDirection * _deltaTime);
-
-
+        //CollisionFlags cFlags = characterTransform.Move(moveDirection * _deltaTime);
 
         CheckInput();
 
@@ -134,7 +183,7 @@ public class CharacterControlScript : MonoBehaviour
             //}
 
             float correctJumpLength = runDistance;
-            Vector3 newPos = characterController.transform.localPosition;
+            Vector3 newPos = characterTransform.localPosition;
             float ratio = newPos.y / jumpHeight * 4.0f;
 
             if (Mathf.Approximately(newPos.y, 0.0f))
@@ -144,16 +193,19 @@ public class CharacterControlScript : MonoBehaviour
 
             if (isGoingUp)
             {
-                newPos.y = characterController.transform.localPosition.y + (jumpHeight *  dTime);
+                newPos.y = characterTransform.localPosition.y + (jumpHeight *  dTime);
                 if (newPos.y >= jumpHeight)
                 {
                     newPos.y = jumpHeight;
                     isGoingUp = false;
+
+                    currentVehicleControlScript = null;
+                    characterColliderScript.SetTrigger(true);
                 }
             }
             else
             {
-                newPos.y = characterController.transform.localPosition.y + (-jumpHeight *  dTime);
+                newPos.y = characterTransform.localPosition.y + (-jumpHeight *  dTime);
                 if (newPos.y <= 0.0f)
                 {
                     newPos.y = 0.0f;
@@ -161,15 +213,25 @@ public class CharacterControlScript : MonoBehaviour
                 }
             }
 
-            characterController.transform.localPosition = newPos;
+            characterTransform.localPosition = newPos;
         }
 
         //float dTime = laneChangeSpeed * TrackManager.Instance.laneOffset * _deltaTime / runDistance;
-        newLaneChangeTargetPosition.y = characterController.transform.localPosition.y;
-        characterController.transform.localPosition = Vector3.MoveTowards(characterController.transform.localPosition, newLaneChangeTargetPosition, dTime);
+        newLaneChangeTargetPosition.y = characterTransform.localPosition.y;
+        characterTransform.localPosition = Vector3.MoveTowards(characterTransform.localPosition, newLaneChangeTargetPosition, dTime);
 
         // Move pivot forward
         float scaledSpeed = runDistance * _deltaTime;
+
+        Vector3 newForwardTargetPosition = forwardTargetPosition;
+        bool needRecenter = transform.position.sqrMagnitude > TrackManager.Instance.k_FloatingOriginThreshold;
+        if (needRecenter)
+        {
+            TrackManager.Instance.ReCenterTracks(transform.position);
+            forwardTargetPosition = newForwardTargetPosition -= transform.position;
+            transform.position = Vector3.zero;
+        }
+
         if (autoForward)
         {
             Vector3 movingDirection = transform.forward;
@@ -179,14 +241,6 @@ public class CharacterControlScript : MonoBehaviour
         }
         else
         {
-            Vector3 newForwardTargetPosition = forwardTargetPosition;
-            bool needRecenter = transform.position.sqrMagnitude > TrackManager.Instance.k_FloatingOriginThreshold;
-            if (needRecenter)
-            {
-                TrackManager.Instance.ReCenterTracks(transform.position);
-                forwardTargetPosition = newForwardTargetPosition -= transform.position;
-                transform.position = Vector3.zero;
-            }
             transform.position = Vector3.MoveTowards(transform.position, newForwardTargetPosition, laneChangeSpeed * _deltaTime);
         }
 
@@ -201,16 +255,20 @@ public class CharacterControlScript : MonoBehaviour
         //if (moveDirection.x)
 #if UNITY_EDITOR || UNITY_STANDALONE
         // Use key input in editor or standalone
-        if (Input.GetKeyDown(KeyCode.LeftArrow))
+        if (Input.GetKeyDown(KeyCode.LeftArrow) || (Input.GetMouseButtonDown(0) && !EventSystem.current.IsPointerOverGameObject()))
         {
             ChangeLane(-1);
         }
-        else if (Input.GetKeyDown(KeyCode.RightArrow))
+        else if (Input.GetKeyDown(KeyCode.RightArrow) || (Input.GetMouseButtonDown(1) && !EventSystem.current.IsPointerOverGameObject()))
         {
             ChangeLane(1);
         }
         else if (Input.GetKeyDown(KeyCode.UpArrow))
         {
+            if (isJumping)
+            {
+                return;
+            }
             forwardTargetPosition = new Vector3(0.0f, 0.0f, transform.position.z + runDistance);
             Jump();
         }
@@ -277,21 +335,24 @@ public class CharacterControlScript : MonoBehaviour
 
             // Input check is AFTER the swip test, that way if TouchPhase.Ended happen a single frame after the Began Phase
             // a swipe can still be registered (otherwise, m_IsSwiping will be set to false and the test wouldn't happen for that began-Ended pair)
-            if (Input.GetTouch(0).phase == TouchPhase.Began)
+            if (!EventSystem.current.IsPointerOverGameObject(Input.GetTouch(0).fingerId))
             {
-                startingTouchPosition = Input.GetTouch(0).position;
-                isSwiping = true;
-            }
-            else if (Input.GetTouch(0).phase == TouchPhase.Ended)
-            {
-                isSwiping = false;
+                if (Input.GetTouch(0).phase == TouchPhase.Began)
+                {
+                    startingTouchPosition = Input.GetTouch(0).position;
+                    isSwiping = true;
+                }
+                else if (Input.GetTouch(0).phase == TouchPhase.Ended)
+                {
+                    isSwiping = false;
+                }
             }
         }
     }
 
     void TapControl ()
     {
-        if (Input.touchCount == 1)
+        if (Input.touchCount == 1 && Input.GetTouch(0).phase == TouchPhase.Began && !EventSystem.current.IsPointerOverGameObject(Input.GetTouch(0).fingerId))
         {
             Touch touch = Input.GetTouch(0);
             float halfWidth = Screen.width * 0.5f;
@@ -327,7 +388,13 @@ public class CharacterControlScript : MonoBehaviour
 
         currentLane = targetLane;
         laneChangeTargetPosition = new Vector3((currentLane - 1) * TrackManager.Instance.laneOffset, 0.0f, 0.0f);
-        forwardTargetPosition = new Vector3(0.0f, 0.0f, transform.position.z + runDistance);
+        //forwardTargetPosition = new Vector3(0.0f, 0.0f, transform.position.z + runDistance);
+        float speed = runDistance;
+        if (currentVehicleControlScript != null)
+        {
+            speed = currentVehicleControlScript.speed * 0.5f;
+        }
+        forwardTargetPosition = new Vector3(0.0f, 0.0f, transform.position.z + speed);
         Jump();
     }
 
